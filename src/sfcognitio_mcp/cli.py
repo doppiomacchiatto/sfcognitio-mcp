@@ -22,7 +22,7 @@ log = logging.getLogger("sfcognitio")
 
 
 def _guides(cfg: Config, args) -> list[str]:
-    return args.guide or cfg.guides
+    return args.guide or cfg.all_guides
 
 
 def _apply_overrides(cfg: Config, args) -> None:

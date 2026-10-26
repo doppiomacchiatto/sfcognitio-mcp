@@ -15,10 +15,14 @@ from __future__ import annotations
 import gzip
 import logging
 import re
+import time
 import xml.etree.ElementTree as ET
+from pathlib import Path
 from urllib.parse import urldefrag
 
-from .config import Config
+import httpx
+
+from .config import ARTICLES_GUIDE, Config
 from .http import PoliteClient
 from .manifest import PageRef
 from .versions import parse_release_spec, release_name_to_api, version_info
@@ -67,8 +71,32 @@ def parse_sitemap(content: bytes) -> tuple[list[str], list[str]]:
     return pages, children
 
 
-async def fetch_sitemap_urls(client: PoliteClient, url: str, max_depth: int = 3) -> list[str]:
+def _sitemap_cache_file(cache_dir: Path, url: str) -> Path:
+    name = re.sub(r"[^A-Za-z0-9]+", "_", url.split("//", 1)[-1]).strip("_")
+    return cache_dir / f"{name}.txt"
+
+
+def sitemap_cache_args(cfg: Config) -> dict:
+    return {"cache_dir": cfg.data_dir / "sitemaps", "max_age_hours": cfg.crawler.sitemap_cache_hours}
+
+
+async def fetch_sitemap_urls(client: PoliteClient, url: str, max_depth: int = 3,
+                             cache_dir: Path | None = None, max_age_hours: float = 0) -> list[str]:
+    """Walk a sitemap tree. A child that keeps failing is skipped with a warning.
+
+    The URL list is cached under ``cache_dir`` only when every sitemap loaded, and
+    reused while younger than ``max_age_hours`` (0 = never reuse).
+    """
+    cache_file = _sitemap_cache_file(cache_dir, url) if cache_dir else None
+    if cache_file and max_age_hours > 0 and cache_file.exists():
+        age_hours = (time.time() - cache_file.stat().st_mtime) / 3600
+        if age_hours < max_age_hours:
+            cached = cache_file.read_text(encoding="utf-8").split()
+            log.info("Using cached sitemap URLs for %s (%d URLs, %.1fh old)", url, len(cached), age_hours)
+            return cached
+
     out: list[str] = []
+    failed: list[str] = []
     queue = [(url, 0)]
     seen: set[str] = set()
     while queue:
@@ -76,18 +104,34 @@ async def fetch_sitemap_urls(client: PoliteClient, url: str, max_depth: int = 3)
         if sm in seen:
             continue
         seen.add(sm)
-        resp = await client.get(sm)
+        try:
+            resp = await client.get(sm)
+        except httpx.TransportError as e:
+            if depth == 0:
+                raise
+            log.warning("Sitemap %s unreachable, skipping: %s", sm, e.__class__.__name__)
+            failed.append(sm)
+            continue
         if resp.status_code != 200:
             log.warning("Sitemap %s returned %s", sm, resp.status_code)
+            failed.append(sm)
             continue
         try:
             pages, children = parse_sitemap(resp.content)
         except ET.ParseError as e:
             log.warning("Sitemap %s is not valid XML: %s", sm, e)
+            failed.append(sm)
             continue
         out.extend(pages)
         if depth < max_depth:
             queue.extend((c, depth + 1) for c in children)
+
+    if failed:
+        log.warning("%d sitemap(s) could not be read, so the URL list is incomplete and was not cached: %s",
+                    len(failed), ", ".join(failed))
+    elif cache_file:
+        cache_file.parent.mkdir(parents=True, exist_ok=True)
+        cache_file.write_text("\n".join(out) + "\n", encoding="utf-8")
     return out
 
 
@@ -204,7 +248,7 @@ async def discover_atlas_guide(client: PoliteClient, cfg: Config, guide: str,
 
     cache = sitemap_cache if sitemap_cache is not None else {}
     if "urls" not in cache:
-        cache["urls"] = await fetch_sitemap_urls(client, cfg.atlas.sitemap)
+        cache["urls"] = await fetch_sitemap_urls(client, cfg.atlas.sitemap, **sitemap_cache_args(cfg))
     refs: dict[str, PageRef] = {}
     for u in cache["urls"]:
         info = parse_atlas_url(u)
@@ -247,11 +291,28 @@ def filter_docs_urls(urls: list[str], cfg: Config) -> list[PageRef]:
     return list(refs.values())
 
 
+# -- extra pages ------------------------------------------------------------
+
+def extra_page_refs(urls: list[str]) -> list[PageRef]:
+    """Hand-picked URLs from ``extra_pages``, kept in the ``articles`` bucket."""
+    refs: dict[str, PageRef] = {}
+    for u in urls:
+        u = urldefrag(u)[0]
+        parts = [p for p in u.split("/docs/", 1)[-1].split("/") if p and p not in ("platform", "guide")]
+        page = re.sub(r"\.(html?|md)$", "", "-".join(parts))
+        refs.setdefault(u, PageRef(url=u, source="docs", guide=ARTICLES_GUIDE, page=page))
+    return list(refs.values())
+
+
 # -- entry point ------------------------------------------------------------
 
 async def discover(client: PoliteClient, cfg: Config, guides: list[str] | None = None) -> list[PageRef]:
-    guides = guides or cfg.guides
+    guides = guides or cfg.all_guides
     refs: list[PageRef] = []
+
+    if ARTICLES_GUIDE in guides:
+        refs.extend(extra_page_refs(cfg.extra_pages))
+        guides = [g for g in guides if g != ARTICLES_GUIDE]
 
     docs_guides = list(guides)
     if cfg.atlas.enabled:
@@ -265,7 +326,7 @@ async def discover(client: PoliteClient, cfg: Config, guides: list[str] | None =
                 docs_guides.remove(g)
 
     if cfg.docs.enabled and docs_guides:
-        urls = await fetch_sitemap_urls(client, cfg.docs.sitemap)
+        urls = await fetch_sitemap_urls(client, cfg.docs.sitemap, **sitemap_cache_args(cfg))
         sub = Config(cfg.data_dir, cfg.crawler, docs_guides, cfg.atlas, cfg.docs)
         found = filter_docs_urls(urls, sub)
         log.info("docs: %d pages for %s", len(found), ", ".join(docs_guides))

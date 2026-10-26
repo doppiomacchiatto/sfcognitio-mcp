@@ -20,48 +20,114 @@ Context for continuing work on this project in a new session (for example, Claud
 | License | Apache 2.0 | Patent grant, contribution terms |
 | Stack | Python | Strongest crawling, PDF, and embedding libraries |
 | Content | **Bring your own index** | No Salesforce content in the repo. Users build their own with the crawler. Salesforce's terms may restrict redistributing their docs |
-| Release | Pinned to **Winter '27** (API 68.0, doc release 264.0) | Guides don't move to new releases in lockstep; pinning keeps them consistent |
+| Release | Prefer **Winter '27** (API 68.0, doc release 264.0); fall back to the latest published (Summer '26) per guide | Winter '27 is not officially out yet. Use 27 when a guide has it, 26 when it doesn't. `strict_release: false` does this |
 | Fetch politeness | 2 concurrent, 2.5s per-host delay, stop after 5 consecutive 403/429 | Be a good citizen; resume later |
+| Scope | **Salesforce Platform, Sales Cloud, Service Cloud** only | Focus. See "Scope" below |
+
+## Scope
+
+In scope: **Salesforce Platform, Sales Cloud, Service Cloud.**
+Out of scope: **Marketing Cloud, Revenue Cloud, Tableau, Slack.** In the `llms.txt` index that means `llms-marketing-cloud`, `llms-marketing-cloud-mobilepush`, `llms-revenue-cloud`, `llms-analytics` (Tableau Next) and `llms-salesforce-slack-sdk`. I also treated `llms-pardot` (Account Engagement) and `llms-personalization` as Marketing; confirm that.
+
+### Decisions by guide
+
+`llms-product-docs.txt` (classic atlas, `.htm`, 15,661 pages, 32 guides):
+
+| Guide | Pages | Decision |
+|---|---|---|
+| `apexcode` | 549 | Yes (already configured) |
+| `api_meta` | 707 | Yes (already configured) |
+| `apexref` | 2,331 | **Yes** |
+| `object_reference` | 1,890 | **Yes** |
+| `api_tooling` | 347 | **Yes** |
+| `uiapi` | 269 | **Yes** |
+| `bi_dev_guide_rest` (CRM Analytics) | 541 | **Yes** |
+| `mobile_sdk` | 413 | Optional; **no for now** |
+| `salesforce_recipes_api` | 299 | **No** |
+| Industry clouds (Health, Insurance, Life Sciences, Financial Services, Retail, Education, Nonprofit, Net Zero, Media, Manufacturing, Automotive, Communications, ...) | thousands | No: not Platform, Sales or Service |
+
+Not yet reviewed: the 7 smallest product-docs guides (only the top 25 were listed), and `bi_dev_guide_rest_sdd` (313 pages), which may also be CRM Analytics.
+
+`llms-platform.txt` and related files (newer docs site, `.md`):
+
+| Guide | Pages | Decision |
+|---|---|---|
+| `api-rest`, `api`, `api-asynch` | 310 / 208 / 128 | Yes. Moved to the new site; replace the atlas copies |
+| `platform-events` | 240 | Yes (already configured) |
+| `lwc` | 689 | Yes (already configured) |
+| `field-reference` | 2,712 | **Yes** |
+| `lightning-component-reference` (base components) | 443 | Undecided |
+| `lightning-components-security`, `utam`, `slds-linter`, `slds-validator` (from `llms-lwc.txt`) | 73 / 41 / 17 / 9 | **Yes** (LWC extras) |
+| `connect-rest-api`, `graphql`, `pub-sub-api` | 49 / 76 / 49 | Undecided. Intro pages for connect-rest-api, graphql and api-streaming are already in the `articles` bucket |
+| The other 23 guides in `llms-platform.txt` | see `guides.tsv` | **TODO: create a Platform subset** (below) |
+
+Sales Cloud (`llms-sales-cloud.txt`, 125 pages):
+- `channel-revenue-management` (83): **No.**
+- `spiff` (6): **On hold**, Juan is analyzing it. (I had suggested excluding it as Revenue-like.)
+- `maps-dev-guide` (17), `enablement` (13), `sales-engagement` (6): proposed to keep. **Not confirmed.**
+
+Service Cloud (`llms-service-cloud.txt`, 28 guides, 2,585 pages): **On hold**, Juan is analyzing it. Questionable ones: `service-connector-api` (524), `agentforce-it-service` (394), `workdotcom-dev` (81).
+
+## TODO
+
+- [ ] **Create a Platform subset.** Decide which of the 26 guides in `llms-platform.txt` to keep. Exclude the legacy ones: candidates are `ajax`, `caf-dev`, `salesforce-developer-environment-dotnet-tipsheet`, `salesforce-pages-developers-guide` (494 pages, Visualforce) and `mobile-offline`. These are my suggestions, not decisions.
+- [ ] Juan to analyze Service Cloud and `spiff` (both on hold).
+- [ ] Decide the remaining undecided guides in the Scope tables above (base components, connect-rest-api, graphql, pub-sub-api).
+- [ ] Review the 7 unlisted product-docs guides and `bi_dev_guide_rest_sdd`.
+- [ ] Switch discovery to the `llms.txt` lists: add an allow-list of guides, and read page URLs from `llms-*.txt` instead of walking the sitemap. Move `api_rest`, `api` and `api_asynch` out of `ATLAS_GUIDES` and into the docs source.
+- [ ] Check the stale-row problem when Winter '27 is published (see "Releases" below).
+- [ ] Add the inventory scripts to the repo (they currently live in a temp directory), ideally as `sfcognitio inventory`.
+- [ ] Add a `docs.exclude` list for Marketing, Revenue, Tableau and Slack once their URL path segments are known. The sitemap dump was never completed.
+- [ ] Run the trial crawl: `sfcognitio crawl --guide articles`, then `--limit 50`. Inspect `data/text/` (code blocks, tables, front matter, any MDX leftovers in the `.md` source).
+- [ ] Publish the placeholder packages (`packages/pypi-placeholder`: `python -m build && twine upload dist/*`; `packages/npm-placeholder`: `npm publish`).
+- [ ] Fill in the GitHub About description and topics (`salesforce`, `mcp`, `rag`, `ai-agents`, `model-context-protocol`).
+- [ ] Push the local commits; start **milestone 2** (index).
 
 ## Roadmap
 
 | # | Milestone | Status |
 |---|---|---|
-| 1 | Crawler: discover, fetch, extract to versioned Markdown | **Built, 37 tests passing; live trial pending** |
+| 1 | Crawler: discover, fetch, extract to versioned Markdown | **Built, 41 tests passing; live trial pending** |
 | 2 | Index: heading-aware chunks (never split code), vector + keyword (BM25) hybrid search with RRF; swappable embeddings (local Ollama or Bedrock Titan) | Next |
 | 3 | MCP server: `search_docs`, `get_page`, `get_governor_limits`; stdio + HTTP | Planned |
 | 4 | Hosted on AWS (Lambda or container + API Gateway; S3 Vectors or OpenSearch Serverless), plus a REST/OpenAPI endpoint | Planned |
 | 5 | Expert layer: structured lookups (limits, object/field reference, Apex/LWC signatures); pair with Juan's `salesforce-bedrock-mcp` server for live-org metadata | Later |
 
-## Guides crawled (config.yaml)
+## Guides currently in config.yaml
 
-| Guide id | Guide | Source |
+These seven were the original set. The scope work above will change this list.
+
+| Guide id | Guide | Where it actually lives (verified 2026-10-25) |
 |---|---|---|
 | `apexcode` | Apex Developer Guide | classic atlas |
-| `api_rest` | REST API Developer Guide | classic atlas |
 | `api_meta` | Metadata API Developer Guide | classic atlas |
-| `api` | SOAP API Developer Guide | classic atlas |
-| `api_asynch` | Bulk API 2.0 and Bulk API Developer Guide | classic atlas |
-| `lwc` | Lightning Web Components Developer Guide | newer docs site |
-| `platform-events` | Platform Events Developer Guide | newer docs site |
+| `api_rest` | REST API Developer Guide | atlas copy is Summer '26; **also on the new site** as `platform/api-rest` |
+| `api` | SOAP API Developer Guide | atlas copy is Summer '26; also on the new site as `platform/api` |
+| `api_asynch` | Bulk API 2.0 and Bulk API Developer Guide | atlas copy is Summer '26; also on the new site as `platform/api-asynch` |
+| `lwc` | Lightning Web Components Developer Guide | new site |
+| `platform-events` | Platform Events Developer Guide | new site |
 
-**Open question:** add `object_reference` (Object Reference: every standard object and field)? It's large but valuable for field-level questions.
+`extra_pages` in `config.yaml` adds hand-picked URLs under guide `articles` (`data/text/articles/`). Currently: Connect REST API intro, GraphQL about, Streaming API intro.
 
 ## How Salesforce docs work (verified live on 2026-10-25)
 
-From `sfcognitio doctor` run in WSL. All endpoints returned HTTP 200.
+**`llms.txt` index (best discovery source).** `https://developer.salesforce.com/docs/llms.txt` lists about 45 product files, `https://developer.salesforce.com/docs/llms-<product>.txt`. Each lists page URLs, so no sitemap walk is needed. All fetched with HTTP 200.
+- Newer-site files list `.md` URLs: `llms-platform` (2,872 pages), `llms-platform-field-ref` (2,712), `llms-service-cloud` (2,585), `llms-lwc` (829), `llms-lightning-base-components` (443), `llms-sales-cloud` (125), `llms-graphql-api` (76), `llms-connect-rest` (49), `llms-event-bus` (49).
+- `llms-product-docs.txt` (3.7 MB) lists classic atlas `.htm` URLs with no version in the URL, which means "latest".
+- The index tells agents to default to the latest API version.
+- Saved copies are in `data/llms/` and the combined inventory (25,401 unique URLs, 101 guides) is in `data/inventory/urls.tsv` and `guides.tsv`. Both are gitignored.
+- Not fetched: `llms-security`, `llms-metadata-coverage`, `llms-mobile-sdk`, `llms-salesforcedx` (possibly in scope), and the out-of-scope files.
 
 **Classic atlas guides**
 - Page URL: `https://developer.salesforce.com/docs/atlas.<locale>[.<doc_release>].<guide>.meta/<guide>/<page>.htm`
 - Table of contents (JSON): `/docs/get_document/atlas.en-us[.<doc_release>].<guide>.meta`. The response has a `toc` tree with `a_attr.href` and a `version` object containing `doc_version` and `version_text`
 - Page content (JSON with `content` HTML and `title`): `/docs/get_document_content/<guide>/<page>/en-us/<doc_release>`
 - Sitemap fallback: `https://developer.salesforce.com/docs-atlas-sitemap.xml`
-- Page counts at "latest": apexcode 548, api_rest 309, api_meta 707, api 207, api_asynch 127
-- "Latest" versions differed: apexcode and api_meta were Winter '27; api_rest, api and api_asynch were Summer '26. That's why the release is pinned now. **Still unverified:** whether those three exist at Winter '27. If not, the crawler warns and uses their latest (`strict_release: false`)
+- Winter '27 (`264.0`) is published for `apexcode` (548 pages) and `api_meta` (707). It is **not** published for `api_rest`, `api` and `api_asynch`; their atlas TOC returns 0 pages, and the crawler falls back to Summer '26 (309 / 207 / 127 pages). Those three guides have moved to the new site.
 
-**Newer docs site** (`/docs/platform/<guide>/guide/...`)
-- Sitemap: `https://developer.salesforce.com/docs/ssg-sitemap.xml`
-- **Serves raw Markdown**: replace `.html` with `.md` in any page URL. The crawler fetches `.md` first and falls back to HTML
+**Newer docs site** (`/docs/<section>/<guide>/guide/...`, sections seen: `platform`, `sales`, `service`)
+- Sitemap: `https://developer.salesforce.com/docs/ssg-sitemap.xml`. It is a tree of child sitemaps and takes about 4 minutes to walk. The crawler now caches the URL list in `data/sitemaps/` for 24 hours.
+- **Serves raw Markdown**: replace `.html` with `.md` in any page URL (verified on `platform/api-rest/guide/intro-what-is-rest-api.md`: HTTP 200, clean Markdown, relative links to other `.md` pages). The crawler fetches `.md` first and falls back to HTML
 - Not versioned; only serves the current release
 - LWC's classic atlas TOC is a leftover 1-page Winter '23 stub. The crawler skips atlas for guides listed in `DOCS_GUIDES`
 
@@ -69,17 +135,23 @@ From `sfcognitio doctor` run in WSL. All endpoints returned HTTP 200.
 
 **User agent:** developer.salesforce.com returns 403 to anonymous agents. Keep the descriptive UA in `config.yaml`.
 
+### Releases
+
+The pin is `release: "Winter '27"` with `strict_release: false`. Each page's front matter records its own `api_version`, `doc_release` and `release`. Open risk: Winter '27 atlas URLs contain `264.0` but the fallback URLs don't, so when Winter '27 is published for a guide, discovery may add new manifest rows next to the old Summer '26 ones, both mapping to the same `data/text/<guide>/<page>.md`. Untested. Plan to re-discover (or re-crawl those guides) after the release goes live.
+
 ## Code map
 
 ```
 src/sfcognitio_mcp/
   cli.py        sfcognitio doctor|discover|fetch|extract|crawl|status  (--guide, --limit, --release)
-  config.py     dataclasses loaded from config.yaml
+  config.py     dataclasses loaded from config.yaml; extra_pages, all_guides, sitemap_cache_hours
   versions.py   release <-> API <-> doc release; parse_release_spec()
   manifest.py   SQLite manifest (data/manifest.sqlite3): status per URL, ETag, versions, paths
   http.py       PoliteClient: per-host delay, concurrency, retries, BlockedError
   discover.py   atlas TOC -> atlas sitemap fallback; SSG sitemap filtered by guide path segment
                 ATLAS_GUIDES (never use SSG sitemap), DOCS_GUIDES (skip atlas), MIN_TOC_PAGES (stub check)
+                extra_page_refs() for the "articles" bucket; fetch_sitemap_urls() with on-disk cache
+                and skip-on-failure for child sitemaps (a failed root sitemap still raises)
   fetch.py      atlas content JSON API -> HTML fallback; docs .md source -> HTML fallback; conditional GETs
   extract.py    HTML -> Markdown (code fences with language), or tidy the .md source; YAML front matter
 tests/          test_units.py, test_pipeline.py (mocked with httpx.MockTransport; no network needed)
@@ -93,28 +165,23 @@ Output: `data/text/<guide>/<page>.md`, with front matter containing `title, url,
 ```bash
 cd ~/dev/sfcognitio-mcp
 source .venv/bin/activate          # first time: python3 -m venv .venv && pip install -e ".[dev]"
-pytest                             # 37 tests
+pytest                             # 41 tests
 sfcognitio doctor                  # endpoint check, shows the pinned release per guide
+sfcognitio discover --guide articles   # no network: loads extra_pages into the manifest
+sfcognitio crawl --guide articles  # fetch just the extra pages
 sfcognitio crawl --limit 50        # trial
-sfcognitio crawl --guide platform-events --limit 20
 sfcognitio status
 sfcognitio crawl                   # full run (resumable; re-run to continue)
 ```
 
+`doctor` reports `lwc` and `platform-events` as ERR ("0 pages in docs sitemap"); that is a limitation of the check, since `discover` follows the child sitemaps and found 692 and 242 pages.
+
 ## Gotchas learned
 
 - **Underscores:** markdownify escapes `_` by default, which mangles `Invoice__c`. It's disabled (`escape_underscores=False`), and a test covers it.
-- **Short guide ids:** `api` matches lots of `/api/` segments on the SSG sitemap. Atlas guides are kept off it via `ATLAS_GUIDES`.
+- **Short guide ids:** `api` matches lots of `/api/` segments on the SSG sitemap. Atlas guides are kept off it via `ATLAS_GUIDES`. This will need rethinking now that `api` is also a new-site guide.
+- **Throttling:** after about an hour of repeated full sitemap walks (3 passes) plus a few other requests, developer.salesforce.com refused TLS connections for a while (`unexpected eof`). It recovered. Avoid re-walking the sitemap; prefer the `llms.txt` lists and the sitemap cache.
 - **Git identity** (Juan): `doppiomacchiatto <3484322+doppiomacchiatto@users.noreply.github.com>`.
 - **Claude can't push to GitHub** unless GitHub is linked in claude.ai (Settings → Connectors). Until then, Juan commits and pushes.
 - In WSL, the Windows drive is at `/mnt/c/Users/juan/...`.
-
-## Immediate next steps
-
-1. Unpack `sfcognitio-update.tgz` into the WSL repo, run `pytest`, then commit and push.
-2. Run `sfcognitio doctor`. Check whether api_rest, api and api_asynch exist at Winter '27.
-3. Run the trial `sfcognitio crawl --limit 50`. Inspect a few files in `data/text/` (code blocks, tables, front matter).
-4. Run the full crawl of the 7 guides (roughly 2,000+ pages; at 2.5s/page with 2 workers, about 45-60 min).
-5. Publish the placeholder packages (`packages/pypi-placeholder`: `python -m build && twine upload dist/*`; `packages/npm-placeholder`: `npm publish`).
-6. Fill in the GitHub About description and topics (`salesforce`, `mcp`, `rag`, `ai-agents`, `model-context-protocol`).
-7. Decide on `object_reference`, then start **milestone 2** (index).
+- Don't name a helper script `inspect.py` (or any stdlib module name) next to other scripts: it shadows the standard library.

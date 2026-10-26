@@ -93,6 +93,24 @@ def test_docs_filtering(tmp_path):
     assert docs_guide_for("https://d/docs/platform/lwc/guide/a.html", ["apexcode", "lwc"]) == "lwc"
 
 
+def test_extra_pages_go_to_articles_bucket(tmp_path):
+    import asyncio
+    from sfcognitio_mcp.config import AtlasSource, Config, CrawlerConfig, DocsSource
+    from sfcognitio_mcp.discover import discover, extra_page_refs
+    url = "https://developer.salesforce.com/docs/platform/connect-rest-api/guide/intro_what_is_chatter_connect.md"
+    refs = extra_page_refs([url, url + "#top"])
+    assert len(refs) == 1
+    r = refs[0]
+    assert (r.url, r.source, r.guide) == (url, "docs", "articles")
+    assert r.page == "connect-rest-api-intro_what_is_chatter_connect"
+
+    cfg = Config(tmp_path, CrawlerConfig(), ["lwc"], AtlasSource(), DocsSource(), extra_pages=[url])
+    assert cfg.all_guides == ["lwc", "articles"]
+    assert Config(tmp_path, CrawlerConfig(), ["lwc"], AtlasSource(), DocsSource()).all_guides == ["lwc"]
+    # "articles" alone needs no network: no client is touched.
+    assert [x.url for x in asyncio.run(discover(None, cfg, ["articles"]))] == [url]
+
+
 def test_html_to_markdown_keeps_code_and_strips_chrome():
     html = """<html><head><title>Trigger Syntax | Apex Developer Guide</title></head><body>
       <header>Site header</header><nav>Menu</nav>

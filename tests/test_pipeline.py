@@ -296,3 +296,72 @@ async def test_docs_pages_prefer_markdown_source(tmp_path):
     assert "```apex\nEventBus.publish(e);\n```" in intro
     publish = (cfg.text_dir / "platform-events" / "platform-events-publish.md").read_text()
     assert "# Publish Events" in publish and "app shell" not in publish
+
+
+NS = "http://www.sitemaps.org/schemas/sitemap/0.9"
+SM = "https://developer.salesforce.com/docs"
+INDEX = (f'<sitemapindex xmlns="{NS}"><sitemap><loc>{SM}/a.xml</loc></sitemap>'
+         f'<sitemap><loc>{SM}/b.xml</loc></sitemap></sitemapindex>').encode()
+
+
+def _urlset(*urls):
+    return (f'<urlset xmlns="{NS}">' + "".join(f"<url><loc>{u}</loc></url>" for u in urls) + "</urlset>").encode()
+
+
+async def test_sitemap_skips_failing_child_and_does_not_cache(tmp_path):
+    from sfcognitio_mcp.discover import fetch_sitemap_urls
+    cfg = make_cfg(tmp_path)
+
+    def handler(request):
+        url = str(request.url)
+        if url.endswith("index.xml"):
+            return httpx.Response(200, content=INDEX)
+        if url.endswith("a.xml"):
+            return httpx.Response(200, content=_urlset("https://x/1"))
+        raise httpx.ConnectError("boom")
+
+    cache_dir = tmp_path / "sm"
+    async with PoliteClient(cfg.crawler, transport=httpx.MockTransport(handler)) as client:
+        urls = await fetch_sitemap_urls(client, f"{SM}/index.xml", cache_dir=cache_dir, max_age_hours=24)
+    assert urls == ["https://x/1"]
+    assert not cache_dir.exists() or not list(cache_dir.iterdir())
+
+
+async def test_sitemap_root_failure_still_raises(tmp_path):
+    from sfcognitio_mcp.discover import fetch_sitemap_urls
+    cfg = make_cfg(tmp_path)
+
+    def handler(request):
+        raise httpx.ConnectError("boom")
+
+    async with PoliteClient(cfg.crawler, transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(httpx.ConnectError):
+            await fetch_sitemap_urls(client, f"{SM}/index.xml")
+
+
+async def test_sitemap_cache_is_reused_then_expires(tmp_path):
+    import os
+    import time
+    from sfcognitio_mcp.discover import fetch_sitemap_urls
+    cfg = make_cfg(tmp_path)
+    hits = []
+
+    def handler(request):
+        hits.append(str(request.url))
+        return httpx.Response(200, content=_urlset("https://x/1", "https://x/2"))
+
+    url = f"{SM}/ssg-sitemap.xml"
+    kw = dict(cache_dir=tmp_path / "sm", max_age_hours=24)
+    async with PoliteClient(cfg.crawler, transport=httpx.MockTransport(handler)) as client:
+        first = await fetch_sitemap_urls(client, url, **kw)
+        second = await fetch_sitemap_urls(client, url, **kw)
+        assert first == second == ["https://x/1", "https://x/2"] and len(hits) == 1
+
+        old = time.time() - 48 * 3600
+        for f in (tmp_path / "sm").iterdir():
+            os.utime(f, (old, old))
+        await fetch_sitemap_urls(client, url, **kw)
+        assert len(hits) == 2
+        await fetch_sitemap_urls(client, url, cache_dir=tmp_path / "sm", max_age_hours=0)
+        assert len(hits) == 3
+

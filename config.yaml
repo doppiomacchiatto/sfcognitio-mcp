@@ -17,6 +17,9 @@ crawler:
   recheck_after_days: 14
   # 0 = no limit. Use --limit on the CLI for trial runs.
   max_pages: 0
+  # Reuse a fully-read sitemap URL list for this many hours (0 = always re-fetch).
+  # The docs sitemap tree takes several minutes to walk, so avoid re-walking it.
+  sitemap_cache_hours: 24
 
 # Guides to crawl. Remove or extend as needed, or override with --guide.
 guides:
@@ -27,6 +30,13 @@ guides:
   - api          # SOAP API Developer Guide (classic atlas)
   - api_asynch   # Bulk API 2.0 and Bulk API Developer Guide (classic atlas)
   - platform-events  # Platform Events Developer Guide (new docs)
+
+# Hand-picked pages to crawl in addition to the guides. They land in the
+# "articles" bucket (data/text/articles/). Newer-docs-site URLs (.md) work best.
+extra_pages:
+  - https://developer.salesforce.com/docs/platform/connect-rest-api/guide/intro_what_is_chatter_connect.md
+  - https://developer.salesforce.com/docs/platform/graphql/guide/graphql-about.md
+  - https://developer.salesforce.com/docs/platform/api-streaming/guide/intro-stream.md
 
 sources:
   atlas:

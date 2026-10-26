@@ -18,6 +18,8 @@ class CrawlerConfig:
     max_backoff_seconds: float = 300
     recheck_after_days: int = 14
     max_pages: int = 0
+    # Reuse a fully-read sitemap URL list for this long before walking it again (0 = always re-fetch).
+    sitemap_cache_hours: float = 24
 
 
 @dataclass
@@ -40,6 +42,9 @@ class DocsSource:
     exclude: list[str] = field(default_factory=list)
 
 
+ARTICLES_GUIDE = "articles"
+
+
 @dataclass
 class Config:
     data_dir: Path
@@ -47,6 +52,12 @@ class Config:
     guides: list[str]
     atlas: AtlasSource
     docs: DocsSource
+    extra_pages: list[str] = field(default_factory=list)
+
+    @property
+    def all_guides(self) -> list[str]:
+        """Configured guides plus the ``articles`` bucket when extra pages are listed."""
+        return self.guides + ([ARTICLES_GUIDE] if self.extra_pages else [])
 
     @property
     def manifest_path(self) -> Path:
@@ -80,4 +91,5 @@ def load_config(path: str | Path) -> Config:
         guides=[g.strip() for g in (raw.get("guides") or []) if g and g.strip()],
         atlas=_pick(AtlasSource, sources.get("atlas")),
         docs=_pick(DocsSource, sources.get("docs")),
+        extra_pages=[u.strip() for u in (raw.get("extra_pages") or []) if u and u.strip()],
     )
