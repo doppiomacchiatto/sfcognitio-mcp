@@ -365,3 +365,136 @@ async def test_sitemap_cache_is_reused_then_expires(tmp_path):
         await fetch_sitemap_urls(client, url, cache_dir=tmp_path / "sm", max_age_hours=0)
         assert len(hits) == 3
 
+
+LLMS_PLATFORM = f"""# Platform
+- [REST intro]({BASE}/platform/api-rest/guide/intro-what-is-rest-api.md): intro
+- [REST arch]({BASE}/platform/api-rest/guide/intro-rest-architecture.md#top)
+- [REST intro again]({BASE}/platform/api-rest/guide/intro-what-is-rest-api.md)
+- [Field ref]({BASE}/platform/field-reference/references/account.md)
+- [Field ref deep]({BASE}/platform/field-reference/references/account/fields/name.md)
+- [Other guide]({BASE}/platform/canvas-framework/guide/canvas.md)
+"""
+LLMS_PRODUCT_DOCS = f"""# Product docs
+- [Apex ref A]({BASE}/atlas.en-us.apexref.meta/apexref/apex_ref_a.htm)
+- [Apex ref B]({BASE}/atlas.en-us.apexref.meta/apexref/apex_ref_b.htm)
+- [Apex dev]({BASE}/atlas.en-us.apexcode.meta/apexcode/apex_intro.htm)
+- [Health]({BASE}/atlas.en-us.health_cloud_object_reference.meta/health_cloud_object_reference/x.htm)
+"""
+
+
+def test_index_llms_urls_groups_and_filters():
+    from sfcognitio_mcp.discover import index_llms_urls, parse_llms_txt
+    urls = parse_llms_txt(LLMS_PLATFORM + LLMS_PRODUCT_DOCS)
+    assert len(urls) == len(set(urls)) and not any("#" in u for u in urls)
+    idx = index_llms_urls(urls, {"api-rest", "field-reference", "apexref", "apexcode"})
+    assert set(idx) == {"api-rest", "field-reference", "apexref", "apexcode"}
+    assert idx["api-rest"].kind == "docs" and len(idx["api-rest"].urls) == 2
+    assert idx["apexref"].kind == "atlas" and len(idx["apexref"].urls) == 2
+    assert idx["field-reference"].kind == "docs" and len(idx["field-reference"].urls) == 2  # incl. a deeper path
+
+
+async def test_discover_uses_llms_lists_and_atlas_toc_with_llms_fallback(tmp_path):
+    from sfcognitio_mcp.config import LlmsSource
+    cfg = Config(
+        data_dir=tmp_path / "data",
+        crawler=CrawlerConfig(per_host_delay_seconds=0, max_retries=1, max_backoff_seconds=0,
+                              sitemap_cache_hours=0),
+        guides=["api-rest", "apexref", "apexcode"],
+        atlas=AtlasSource(release="Winter '27"), docs=DocsSource(),
+        llms=LlmsSource(files=["platform", "product-docs"]),
+    )
+    seen = []
+
+    def handler(request):
+        url = str(request.url)
+        seen.append(url)
+        if url == f"{BASE}/llms-platform.txt":
+            return httpx.Response(200, text=LLMS_PLATFORM)
+        if url == f"{BASE}/llms-product-docs.txt":
+            return httpx.Response(200, text=LLMS_PRODUCT_DOCS)
+        if url == f"{BASE}/get_document/atlas.en-us.264.0.apexcode.meta":
+            return httpx.Response(200, json=TOC)
+        return httpx.Response(404)
+
+    async with PoliteClient(cfg.crawler, transport=httpx.MockTransport(handler)) as client:
+        refs = await discover(client, cfg)
+
+    assert not any(u.endswith("sitemap.xml") for u in seen)
+    by = {}
+    for r in refs:
+        by.setdefault(r.guide, []).append(r)
+    assert sorted(r.url for r in by["api-rest"]) == [
+        f"{BASE}/platform/api-rest/guide/intro-rest-architecture.md",
+        f"{BASE}/platform/api-rest/guide/intro-what-is-rest-api.md",
+    ]
+    assert {r.source for r in by["api-rest"]} == {"docs"}
+    assert sorted(r.page for r in by["api-rest"]) == ["intro-rest-architecture", "intro-what-is-rest-api"]
+    # apexcode: pinned TOC wins over the llms list
+    assert {r.release for r in by["apexcode"]} == {"Winter '27"} and len(by["apexcode"]) == 2
+    # apexref: no TOC at all, so the llms list is the fallback
+    assert sorted(r.page for r in by["apexref"]) == ["apex_ref_a.htm", "apex_ref_b.htm"]
+    assert {r.source for r in by["apexref"]} == {"atlas"}
+
+
+async def test_extra_page_covered_by_a_guide_stays_with_the_guide(tmp_path):
+    from sfcognitio_mcp.config import LlmsSource
+    covered = f"{BASE}/platform/api-rest/guide/intro-what-is-rest-api.md"
+    other = f"{BASE}/platform/somewhere/guide/lonely.md"
+    cfg = Config(
+        data_dir=tmp_path / "data", crawler=CrawlerConfig(per_host_delay_seconds=0, sitemap_cache_hours=0),
+        guides=["api-rest"], atlas=AtlasSource(), docs=DocsSource(),
+        extra_pages=[covered, other], llms=LlmsSource(files=["platform"]),
+    )
+
+    def handler(request):
+        if str(request.url) == f"{BASE}/llms-platform.txt":
+            return httpx.Response(200, text=LLMS_PLATFORM)
+        return httpx.Response(404)
+
+    async with PoliteClient(cfg.crawler, transport=httpx.MockTransport(handler)) as client:
+        refs = await discover(client, cfg)
+    assert [(r.guide, r.url) for r in refs if r.url == covered] == [("api-rest", covered)]
+    assert [(r.guide, r.url) for r in refs if r.guide == "articles"] == [("articles", other)]
+
+
+async def test_llms_text_is_cached_on_disk(tmp_path):
+    from sfcognitio_mcp.config import LlmsSource
+    from sfcognitio_mcp.discover import fetch_llms_text
+    cfg = make_cfg(tmp_path)
+    cfg.llms = LlmsSource(files=["platform"])
+    hits = []
+
+    def handler(request):
+        hits.append(str(request.url))
+        return httpx.Response(200, text=LLMS_PLATFORM)
+
+    async with PoliteClient(cfg.crawler, transport=httpx.MockTransport(handler)) as client:
+        assert await fetch_llms_text(client, cfg, "platform") == LLMS_PLATFORM
+        assert await fetch_llms_text(client, cfg, "platform") == LLMS_PLATFORM
+    assert len(hits) == 1
+
+
+async def test_llms_fetch_failure_falls_back_to_none(tmp_path):
+    from sfcognitio_mcp.discover import fetch_llms_text
+    cfg = make_cfg(tmp_path)
+
+    def handler(request):
+        raise httpx.ConnectError("boom")
+
+    async with PoliteClient(cfg.crawler, transport=httpx.MockTransport(handler)) as client:
+        assert await fetch_llms_text(client, cfg, "platform") is None
+
+
+def test_prune_pending_only_removes_unfetched_stale_rows(tmp_path):
+    from sfcognitio_mcp.manifest import PageRef
+    refs = [PageRef(url=f"https://x/{i}", source="docs", guide="g", page=str(i)) for i in range(3)]
+    other = PageRef(url="https://x/other", source="docs", guide="h", page="o")
+    with Manifest(tmp_path / "m.sqlite3") as m:
+        m.upsert_discovered(refs + [other])
+        m.db.execute("UPDATE pages SET status = 'fetched' WHERE url = 'https://x/2'")
+        m.db.commit()
+        removed = m.prune_pending(refs[:1])  # only guide g is re-discovered, and only /0 still listed
+        assert removed == 1  # /1 is pending and stale; /2 was fetched; guide h untouched
+        left = {r["url"] for r in m.db.execute("SELECT url FROM pages")}
+    assert left == {"https://x/0", "https://x/2", "https://x/other"}
+

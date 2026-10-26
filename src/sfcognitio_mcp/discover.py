@@ -17,6 +17,7 @@ import logging
 import re
 import time
 import xml.etree.ElementTree as ET
+from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urldefrag
 
@@ -221,8 +222,13 @@ async def _read_toc(client: PoliteClient, url: str, guide: str) -> tuple[list[st
 
 
 async def discover_atlas_guide(client: PoliteClient, cfg: Config, guide: str,
-                               sitemap_cache: dict | None = None) -> list[PageRef]:
-    """Discover one atlas guide. ``sitemap_cache`` is a dict reused across guides."""
+                               sitemap_cache: dict | None = None,
+                               known_urls: list[str] | None = None) -> list[PageRef]:
+    """Discover one atlas guide. ``sitemap_cache`` is a dict reused across guides.
+
+    ``known_urls`` (e.g. from an llms list) replaces the sitemap as the fallback
+    when the table of contents is unavailable.
+    """
     base, locale = cfg.atlas.base, cfg.atlas.locale
     pinned = parse_release_spec(cfg.atlas.release)
 
@@ -244,13 +250,17 @@ async def discover_atlas_guide(client: PoliteClient, cfg: Config, guide: str,
         log.info("atlas/%s: %d pages from TOC (%s)", guide, len(pages), ver.get("release") or "version unknown")
         return [PageRef(url=atlas_page_url(base, locale, guide, p), source="atlas", guide=guide, page=p, **ver)
                 for p in pages]
-    log.info("atlas/%s: TOC unavailable (HTTP %s), falling back to sitemap", guide, status)
-
-    cache = sitemap_cache if sitemap_cache is not None else {}
-    if "urls" not in cache:
-        cache["urls"] = await fetch_sitemap_urls(client, cfg.atlas.sitemap, **sitemap_cache_args(cfg))
+    if known_urls is not None:
+        log.info("atlas/%s: TOC unavailable (HTTP %s), falling back to the llms list", guide, status)
+        candidates = known_urls
+    else:
+        log.info("atlas/%s: TOC unavailable (HTTP %s), falling back to sitemap", guide, status)
+        cache = sitemap_cache if sitemap_cache is not None else {}
+        if "urls" not in cache:
+            cache["urls"] = await fetch_sitemap_urls(client, cfg.atlas.sitemap, **sitemap_cache_args(cfg))
+        candidates = cache["urls"]
     refs: dict[str, PageRef] = {}
-    for u in cache["urls"]:
+    for u in candidates:
         info = parse_atlas_url(u)
         if not info or info["guide"] != guide or info["locale"] != locale:
             continue
@@ -259,7 +269,86 @@ async def discover_atlas_guide(client: PoliteClient, cfg: Config, guide: str,
         canon = atlas_page_url(base, locale, guide, info["page"])
         ver = version_info(doc_release=info["doc_release"]) if info["doc_release"] else {}
         refs.setdefault(canon, PageRef(url=canon, source="atlas", guide=guide, page=info["page"], **ver))
-    log.info("atlas/%s: %d pages from sitemap", guide, len(refs))
+    log.info("atlas/%s: %d pages from %s", guide, len(refs), "the llms list" if known_urls is not None else "sitemap")
+    return list(refs.values())
+
+
+# -- llms lists -------------------------------------------------------------
+
+LLMS_LINK_RE = re.compile(r"\]\((https?://[^)\s]+)\)")
+DOCS_MD_RE = re.compile(r"/docs/(?P<section>[^/]+)/(?P<guide>[^/]+)/[^/]+/(?:[^/?#]+/)*[^/?#]+\.md$", re.I)
+
+
+@dataclass
+class LlmsGuide:
+    kind: str  # "atlas" | "docs"
+    urls: list[str] = field(default_factory=list)
+
+
+def parse_llms_txt(text: str) -> list[str]:
+    seen: dict[str, None] = {}
+    for u in LLMS_LINK_RE.findall(text):
+        seen.setdefault(urldefrag(u)[0], None)
+    return list(seen)
+
+
+async def fetch_llms_text(client: PoliteClient, cfg: Config, name: str) -> str | None:
+    """Fetch <base>/llms-<name>.txt, reusing a fresh on-disk copy. None if unavailable."""
+    cache_file = cfg.llms_dir / f"llms-{name}.txt"
+    max_age = cfg.crawler.sitemap_cache_hours
+    if max_age > 0 and cache_file.exists():
+        age_hours = (time.time() - cache_file.stat().st_mtime) / 3600
+        if age_hours < max_age:
+            log.info("Using cached llms-%s.txt (%.1fh old)", name, age_hours)
+            return cache_file.read_text(encoding="utf-8")
+    url = f"{cfg.llms.base.rstrip('/')}/llms-{name}.txt"
+    try:
+        resp = await client.get(url)
+    except httpx.TransportError as e:
+        log.warning("%s unreachable, skipping: %s", url, e.__class__.__name__)
+        return None
+    if resp.status_code != 200:
+        log.warning("%s returned %s, skipping", url, resp.status_code)
+        return None
+    cache_file.parent.mkdir(parents=True, exist_ok=True)
+    cache_file.write_text(resp.text, encoding="utf-8")
+    return resp.text
+
+
+def index_llms_urls(urls: list[str], wanted: set[str], index: dict[str, LlmsGuide] | None = None) -> dict[str, LlmsGuide]:
+    """Group llms page URLs by guide, keeping only ``wanted`` guides."""
+    index = index if index is not None else {}
+    for u in urls:
+        info = parse_atlas_url(u)
+        if info:
+            guide, kind = info["guide"], "atlas"
+        else:
+            m = DOCS_MD_RE.search(u)
+            if not m:
+                continue
+            guide, kind = m.group("guide").lower(), "docs"
+        if guide not in wanted:
+            continue
+        entry = index.setdefault(guide, LlmsGuide(kind))
+        if entry.kind == kind:
+            entry.urls.append(u)
+    return index
+
+
+async def load_llms_index(client: PoliteClient, cfg: Config, wanted: set[str]) -> dict[str, LlmsGuide]:
+    index: dict[str, LlmsGuide] = {}
+    for name in cfg.llms.files:
+        text = await fetch_llms_text(client, cfg, name)
+        if text:
+            index_llms_urls(parse_llms_txt(text), wanted, index)
+    return index
+
+
+def llms_docs_refs(guide: str, urls: list[str]) -> list[PageRef]:
+    refs: dict[str, PageRef] = {}
+    for u in urls:
+        page = re.sub(r"\.md$", "", u.rstrip("/").rsplit("/", 1)[-1])
+        refs.setdefault(u, PageRef(url=u, source="docs", guide=guide, page=page))
     return list(refs.values())
 
 
@@ -314,10 +403,27 @@ async def discover(client: PoliteClient, cfg: Config, guides: list[str] | None =
         refs.extend(extra_page_refs(cfg.extra_pages))
         guides = [g for g in guides if g != ARTICLES_GUIDE]
 
-    docs_guides = list(guides)
+    # Guides listed in an llms file: it says which source each one lives in.
+    rest = list(guides)
+    if cfg.llms.enabled and cfg.llms.files and guides:
+        index = await load_llms_index(client, cfg, {g.lower() for g in guides})
+        rest = []
+        for g in guides:
+            entry = index.get(g.lower())
+            if entry is None:
+                rest.append(g)
+            elif entry.kind == "docs":
+                if cfg.docs.enabled:
+                    found = llms_docs_refs(g, entry.urls)
+                    log.info("llms/%s: %d pages", g, len(found))
+                    refs.extend(found)
+            elif cfg.atlas.enabled:
+                refs.extend(await discover_atlas_guide(client, cfg, g, known_urls=entry.urls))
+
+    docs_guides = list(rest)
     if cfg.atlas.enabled:
         sitemap_cache: dict = {}
-        for g in guides:
+        for g in rest:
             if g in DOCS_GUIDES:
                 continue
             found = await discover_atlas_guide(client, cfg, g, sitemap_cache)
@@ -331,6 +437,10 @@ async def discover(client: PoliteClient, cfg: Config, guides: list[str] | None =
         found = filter_docs_urls(urls, sub)
         log.info("docs: %d pages for %s", len(found), ", ".join(docs_guides))
         refs.extend(found)
+
+    # An extra page already covered by a full guide stays with that guide.
+    covered = {r.url for r in refs if r.guide != ARTICLES_GUIDE}
+    refs = [r for r in refs if r.guide != ARTICLES_GUIDE or r.url not in covered]
 
     missing = [g for g in guides if not any(r.guide == g for r in refs)]
     if missing:

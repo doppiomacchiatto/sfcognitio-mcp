@@ -93,6 +93,20 @@ class Manifest:
         self.db.commit()
         return self.count() - before
 
+    def prune_pending(self, refs: list[PageRef]) -> int:
+        """Delete never-fetched rows of re-discovered guides whose URL is no longer listed."""
+        keep: dict[str, set[str]] = {}
+        for r in refs:
+            if r.guide:
+                keep.setdefault(r.guide, set()).add(r.url)
+        stale: list[tuple[str]] = []
+        for guide, urls in keep.items():
+            rows = self.db.execute("SELECT url FROM pages WHERE guide = ? AND status = 'pending'", (guide,))
+            stale.extend((row["url"],) for row in rows if row["url"] not in urls)
+        self.db.executemany("DELETE FROM pages WHERE url = ?", stale)
+        self.db.commit()
+        return len(stale)
+
     # -- fetch -------------------------------------------------------------
     def due_for_fetch(self, recheck_after_days: int, limit: int = 0, guides: list[str] | None = None) -> list[sqlite3.Row]:
         cutoff = (datetime.now(timezone.utc) - timedelta(days=recheck_after_days)).isoformat(timespec="seconds")

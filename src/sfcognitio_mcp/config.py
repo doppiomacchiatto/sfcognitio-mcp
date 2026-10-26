@@ -42,6 +42,14 @@ class DocsSource:
     exclude: list[str] = field(default_factory=list)
 
 
+@dataclass
+class LlmsSource:
+    enabled: bool = True
+    base: str = "https://developer.salesforce.com/docs"
+    # Product list names; each is fetched from <base>/llms-<name>.txt. Empty = not used.
+    files: list[str] = field(default_factory=list)
+
+
 ARTICLES_GUIDE = "articles"
 
 
@@ -53,6 +61,11 @@ class Config:
     atlas: AtlasSource
     docs: DocsSource
     extra_pages: list[str] = field(default_factory=list)
+    llms: LlmsSource = field(default_factory=LlmsSource)
+
+    @property
+    def llms_dir(self) -> Path:
+        return self.data_dir / "llms"
 
     @property
     def all_guides(self) -> list[str]:
@@ -92,4 +105,5 @@ def load_config(path: str | Path) -> Config:
         atlas=_pick(AtlasSource, sources.get("atlas")),
         docs=_pick(DocsSource, sources.get("docs")),
         extra_pages=[u.strip() for u in (raw.get("extra_pages") or []) if u and u.strip()],
+        llms=_pick(LlmsSource, sources.get("llms")),
     )

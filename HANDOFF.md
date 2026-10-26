@@ -73,7 +73,8 @@ Service Cloud (`llms-service-cloud.txt`, 28 guides, 2,585 pages): **On hold unti
 - [ ] **Create a Platform subset (on hold until 2026-10-26).** Decide which of the 26 guides in `llms-platform.txt` to keep. Exclude the legacy ones: candidates are `ajax`, `caf-dev`, `salesforce-developer-environment-dotnet-tipsheet`, `salesforce-pages-developers-guide` (494 pages, Visualforce) and `mobile-offline`. These are my suggestions, not decisions.
 - [ ] Juan to analyze Service Cloud and `spiff` (both on hold until 2026-10-26).
 - [ ] Review the 7 unlisted product-docs guides and `bi_dev_guide_rest_sdd`.
-- [ ] Switch discovery to the `llms.txt` lists: add an allow-list of guides, and read page URLs from `llms-*.txt` instead of walking the sitemap. Move `api_rest`, `api` and `api_asynch` out of `ATLAS_GUIDES` and into the docs source.
+- [x] Switch discovery to the `llms.txt` lists, with `guides` in `config.yaml` as the allow-list (done 2026-10-25, see "Discovery" below). The manifest now holds 11,681 pending pages for the 21 decided guides plus `articles`; nothing is fetched yet.
+- [ ] When the held guides are decided, add them to `guides` and add `service-cloud` / `sales-cloud` to `sources.llms.files`.
 - [ ] Check the stale-row problem when Winter '27 is published (see "Releases" below).
 - [ ] Add the inventory scripts to the repo (they currently live in a temp directory), ideally as `sfcognitio inventory`.
 - [ ] Add a `docs.exclude` list for Marketing, Revenue, Tableau and Slack once their URL path segments are known. The sitemap dump was never completed.
@@ -86,27 +87,29 @@ Service Cloud (`llms-service-cloud.txt`, 28 guides, 2,585 pages): **On hold unti
 
 | # | Milestone | Status |
 |---|---|---|
-| 1 | Crawler: discover, fetch, extract to versioned Markdown | **Built, 41 tests passing; live trial pending** |
+| 1 | Crawler: discover, fetch, extract to versioned Markdown | **Built, 47 tests passing; discovery done (11,681 pages pending); live fetch trial pending** |
 | 2 | Index: heading-aware chunks (never split code), vector + keyword (BM25) hybrid search with RRF; swappable embeddings (local Ollama or Bedrock Titan) | Next |
 | 3 | MCP server: `search_docs`, `get_page`, `get_governor_limits`; stdio + HTTP | Planned |
 | 4 | Hosted on AWS (Lambda or container + API Gateway; S3 Vectors or OpenSearch Serverless), plus a REST/OpenAPI endpoint | Planned |
 | 5 | Expert layer: structured lookups (limits, object/field reference, Apex/LWC signatures); pair with Juan's `salesforce-bedrock-mcp` server for live-org metadata | Later |
 
-## Guides currently in config.yaml
+## Discovery
 
-These seven were the original set. The scope work above will change this list.
+`guides` in `config.yaml` is the allow-list: the 21 decided guides.
+- **Classic atlas (7):** `apexcode`, `apexref`, `api_meta`, `object_reference`, `api_tooling`, `uiapi`, `bi_dev_guide_rest`.
+- **Newer docs site (14):** `api-rest`, `api`, `api-asynch`, `platform-events`, `field-reference`, `connect-rest-api`, `graphql`, `pub-sub-api`, `lwc`, `lightning-components-security`, `utam`, `slds-linter`, `slds-validator`, `lightning-component-reference`.
+- The old ids `api_rest` and `api_asynch` (atlas, Summer '26) were replaced by `api-rest` and `api-asynch`; their stale manifest rows were deleted.
 
-| Guide id | Guide | Where it actually lives (verified 2026-10-25) |
-|---|---|---|
-| `apexcode` | Apex Developer Guide | classic atlas |
-| `api_meta` | Metadata API Developer Guide | classic atlas |
-| `api_rest` | REST API Developer Guide | atlas copy is Summer '26; **also on the new site** as `platform/api-rest` |
-| `api` | SOAP API Developer Guide | atlas copy is Summer '26; also on the new site as `platform/api` |
-| `api_asynch` | Bulk API 2.0 and Bulk API Developer Guide | atlas copy is Summer '26; also on the new site as `platform/api-asynch` |
-| `lwc` | Lightning Web Components Developer Guide | new site |
-| `platform-events` | Platform Events Developer Guide | new site |
+How `discover` works now (`sources.llms.files` in `config.yaml` lists the eight `llms-*.txt` files used):
+1. Each file is fetched once and cached in `data/llms/` for `sitemap_cache_hours` (24).
+2. The llms index says which source each allow-listed guide lives in.
+3. **Newer-site guides:** page URLs (`.md`) come straight from the llms list. No sitemap walk.
+4. **Atlas guides:** still discovered from the table of contents, pinned to Winter '27, falling back to the guide's latest. The llms list is the fallback if the TOC is unavailable.
+5. Guides not found in any llms file fall back to the old atlas/sitemap logic.
+6. After discovery, never-fetched (`pending`) rows of re-discovered guides whose URL is no longer listed are deleted. Fetched rows are never deleted.
+7. `extra_pages` adds hand-picked URLs under guide `articles` (`data/text/articles/`), unless a full guide already covers the URL. Currently only the Streaming API intro remains in `articles`; the Connect REST and GraphQL intros belong to their full guides.
 
-`extra_pages` in `config.yaml` adds hand-picked URLs under guide `articles` (`data/text/articles/`). Currently: Connect REST API intro, GraphQL about, Streaming API intro.
+Page counts (manifest, 2026-10-25): atlas TOCs give `apexref` 2,329, `object_reference` 1,895 and `apexcode` 548, slightly different from the llms lists (2,331 / 1,890 / 549). The TOC wins.
 
 ## How Salesforce docs work (verified live on 2026-10-25)
 
@@ -143,12 +146,14 @@ The pin is `release: "Winter '27"` with `strict_release: false`. Each page's fro
 ```
 src/sfcognitio_mcp/
   cli.py        sfcognitio doctor|discover|fetch|extract|crawl|status  (--guide, --limit, --release)
-  config.py     dataclasses loaded from config.yaml; extra_pages, all_guides, sitemap_cache_hours
+  config.py     dataclasses loaded from config.yaml; extra_pages, all_guides, sitemap_cache_hours, LlmsSource
   versions.py   release <-> API <-> doc release; parse_release_spec()
-  manifest.py   SQLite manifest (data/manifest.sqlite3): status per URL, ETag, versions, paths
+  manifest.py   SQLite manifest (data/manifest.sqlite3): status per URL, ETag, versions, paths;
+                prune_pending() drops stale never-fetched rows
   http.py       PoliteClient: per-host delay, concurrency, retries, BlockedError
   discover.py   atlas TOC -> atlas sitemap fallback; SSG sitemap filtered by guide path segment
                 ATLAS_GUIDES (never use SSG sitemap), DOCS_GUIDES (skip atlas), MIN_TOC_PAGES (stub check)
+                llms lists: fetch_llms_text(), index_llms_urls(), load_llms_index() (guide -> source + URLs)
                 extra_page_refs() for the "articles" bucket; fetch_sitemap_urls() with on-disk cache
                 and skip-on-failure for child sitemaps (a failed root sitemap still raises)
   fetch.py      atlas content JSON API -> HTML fallback; docs .md source -> HTML fallback; conditional GETs
@@ -164,7 +169,7 @@ Output: `data/text/<guide>/<page>.md`, with front matter containing `title, url,
 ```bash
 cd ~/dev/sfcognitio-mcp
 source .venv/bin/activate          # first time: python3 -m venv .venv && pip install -e ".[dev]"
-pytest                             # 41 tests
+pytest                             # 47 tests
 sfcognitio doctor                  # endpoint check, shows the pinned release per guide
 sfcognitio discover --guide articles   # no network: loads extra_pages into the manifest
 sfcognitio crawl --guide articles  # fetch just the extra pages
@@ -178,7 +183,9 @@ sfcognitio crawl                   # full run (resumable; re-run to continue)
 ## Gotchas learned
 
 - **Underscores:** markdownify escapes `_` by default, which mangles `Invoice__c`. It's disabled (`escape_underscores=False`), and a test covers it.
-- **Short guide ids:** `api` matches lots of `/api/` segments on the SSG sitemap. Atlas guides are kept off it via `ATLAS_GUIDES`. This will need rethinking now that `api` is also a new-site guide.
+- **Short guide ids:** `api` matches lots of `/api/` segments on the SSG sitemap. With the llms index the guide id is read from the URL's own guide segment, so `api` (SOAP API, now on the new site) resolves correctly. The sitemap path is only a fallback for guides not found in any llms file. `api` is still in the code's `ATLAS_GUIDES` set, which only matters on that fallback path; clean it up if the fallback is ever needed for `api`.
+- **llms URL shapes:** new-site pages are `/docs/<section>/<guide>/<guide|references>/.../<page>.md`, sometimes more than one level deep (e.g. `field-reference`, `utam`). Page names (last segment) had no duplicates within a guide in the 2026-10-25 data.
+- **Manifest keys on URL:** if an `extra_pages` URL is also listed in a full guide, the row follows the guide. Discovery drops the extra page in that case.
 - **Throttling:** after about an hour of repeated full sitemap walks (3 passes) plus a few other requests, developer.salesforce.com refused TLS connections for a while (`unexpected eof`). It recovered. Avoid re-walking the sitemap; prefer the `llms.txt` lists and the sitemap cache.
 - **Git identity** (Juan): `doppiomacchiatto <3484322+doppiomacchiatto@users.noreply.github.com>`.
 - **Claude can't push to GitHub** unless GitHub is linked in claude.ai (Settings → Connectors). Until then, Juan commits and pushes.

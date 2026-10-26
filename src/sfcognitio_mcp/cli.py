@@ -36,7 +36,9 @@ async def cmd_discover(cfg: Config, args) -> int:
         refs = await discover(client, cfg, _guides(cfg, args))
     with Manifest(cfg.manifest_path) as m:
         new = m.upsert_discovered(refs)
-        print(f"Discovered {len(refs)} pages ({new} new). Manifest: {cfg.manifest_path}")
+        pruned = m.prune_pending(refs)
+        print(f"Discovered {len(refs)} pages ({new} new"
+              + (f", {pruned} stale pending removed" if pruned else "") + f"). Manifest: {cfg.manifest_path}")
     return 0 if refs else 1
 
 

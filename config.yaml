@@ -21,15 +21,35 @@ crawler:
   # The docs sitemap tree takes several minutes to walk, so avoid re-walking it.
   sitemap_cache_hours: 24
 
-# Guides to crawl. Remove or extend as needed, or override with --guide.
+# Guides to crawl (the allow-list). Override with --guide. Ids are the guide
+# segment in the docs URL. Which source each one uses (classic atlas or the
+# newer docs site) comes from the llms lists under sources.llms.
+# On hold, not listed yet: Platform subset (rest of llms-platform), Service
+# Cloud, spiff. See HANDOFF.md.
 guides:
-  - apexcode     # Apex Developer Guide (classic atlas)
-  - api_rest     # REST API Developer Guide (classic atlas)
-  - lwc          # Lightning Web Components Developer Guide (new docs)
-  - api_meta     # Metadata API Developer Guide (classic atlas)
-  - api          # SOAP API Developer Guide (classic atlas)
-  - api_asynch   # Bulk API 2.0 and Bulk API Developer Guide (classic atlas)
-  - platform-events  # Platform Events Developer Guide (new docs)
+  # Classic atlas
+  - apexcode          # Apex Developer Guide
+  - apexref           # Apex Reference Guide
+  - api_meta          # Metadata API Developer Guide
+  - object_reference  # Object Reference
+  - api_tooling       # Tooling API
+  - uiapi             # User Interface API
+  - bi_dev_guide_rest # CRM Analytics REST API
+  # Newer docs site
+  - api-rest          # REST API Developer Guide
+  - api               # SOAP API Developer Guide
+  - api-asynch        # Bulk API 2.0 and Bulk API Developer Guide
+  - platform-events   # Platform Events Developer Guide
+  - field-reference   # Platform field reference
+  - connect-rest-api  # Connect REST API
+  - graphql           # GraphQL API
+  - pub-sub-api       # Pub/Sub API
+  - lwc               # Lightning Web Components Developer Guide
+  - lightning-components-security
+  - utam
+  - slds-linter
+  - slds-validator
+  - lightning-component-reference  # Lightning base components
 
 # Hand-picked pages to crawl in addition to the guides. They land in the
 # "articles" bucket (data/text/articles/). Newer-docs-site URLs (.md) work best.
@@ -39,6 +59,20 @@ extra_pages:
   - https://developer.salesforce.com/docs/platform/api-streaming/guide/intro-stream.md
 
 sources:
+  llms:
+    enabled: true
+    base: https://developer.salesforce.com/docs
+    # Product lists to read, each fetched from <base>/llms-<name>.txt and cached
+    # in data/llms/. Only guides in the allow-list above are taken from them.
+    files:
+      - product-docs
+      - platform
+      - platform-field-ref
+      - lwc
+      - lightning-base-components
+      - connect-rest
+      - graphql-api
+      - event-bus
   atlas:
     enabled: true
     # Classic guides. Discovery uses each guide's table of contents API,
