@@ -56,7 +56,7 @@ Not yet reviewed: the 7 smallest product-docs guides (only the top 25 were liste
 | `platform-events` | 240 | Yes (already configured) |
 | `lwc` | 689 | Yes (already configured) |
 | `field-reference` | 2,712 | **Yes** |
-| `lightning-component-reference` (base components) | 443 | Undecided |
+| `lightning-component-reference` (base components) | 443 | **Yes** |
 | `lightning-components-security`, `utam`, `slds-linter`, `slds-validator` (from `llms-lwc.txt`) | 73 / 41 / 17 / 9 | **Yes** (LWC extras) |
 | `connect-rest-api`, `graphql`, `pub-sub-api` | 49 / 76 / 49 | Undecided. Intro pages for connect-rest-api, graphql and api-streaming are already in the `articles` bucket |
 | The other 23 guides in `llms-platform.txt` | see `guides.tsv` | **TODO: create a Platform subset** (below) |
@@ -72,7 +72,7 @@ Service Cloud (`llms-service-cloud.txt`, 28 guides, 2,585 pages): **On hold**, J
 
 - [ ] **Create a Platform subset.** Decide which of the 26 guides in `llms-platform.txt` to keep. Exclude the legacy ones: candidates are `ajax`, `caf-dev`, `salesforce-developer-environment-dotnet-tipsheet`, `salesforce-pages-developers-guide` (494 pages, Visualforce) and `mobile-offline`. These are my suggestions, not decisions.
 - [ ] Juan to analyze Service Cloud and `spiff` (both on hold).
-- [ ] Decide the remaining undecided guides in the Scope tables above (base components, connect-rest-api, graphql, pub-sub-api).
+- [ ] Decide the remaining undecided guides in the Scope tables above (connect-rest-api, graphql, pub-sub-api).
 - [ ] Review the 7 unlisted product-docs guides and `bi_dev_guide_rest_sdd`.
 - [ ] Switch discovery to the `llms.txt` lists: add an allow-list of guides, and read page URLs from `llms-*.txt` instead of walking the sitemap. Move `api_rest`, `api` and `api_asynch` out of `ATLAS_GUIDES` and into the docs source.
 - [ ] Check the stale-row problem when Winter '27 is published (see "Releases" below).
