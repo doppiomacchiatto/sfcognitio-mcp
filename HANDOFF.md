@@ -68,8 +68,26 @@ Sales Cloud (`llms-sales-cloud.txt`, 125 pages):
 
 Service Cloud (`llms-service-cloud.txt`, 28 guides, 2,585 pages): **On hold until 2026-10-26**, Juan is analyzing it. Questionable ones: `service-connector-api` (524), `agentforce-it-service` (394), `workdotcom-dev` (81).
 
+## Terms and licensing (checked 2026-10-25; not legal advice)
+
+Goal: help developers and stay within Salesforce's terms.
+
+**What the site says:**
+- `https://developer.salesforce.com/robots.txt` does not disallow our paths. Its rules cover query strings (`?q=`, `&page=`, ...), `/search*`, `/c/*` and a few settings files. It lists the atlas and SSG sitemaps and has a section "LLM and AI agent friendly content" pointing to `https://developer.salesforce.com/llms.txt` and `https://developer.salesforce.com/docs/llms.txt`. The `llms-*.txt` files describe their pages as "LLM-friendly markdown documentation pages". Salesforce's own docs pages have an "open in Claude" button (see below).
+- The Salesforce Website Terms of Service (`https://www.salesforce.com/company/legal/sfdc-website-terms-of-service/`, last updated 2025-04-08), section G: "Using our Site does not give you ownership of any intellectual property rights to the content you access. You may not use content from our Sites unless you obtain permission from us or its owner, or unless you are otherwise permitted by law." Section H points to the Trademark and Copyright Usage Guidelines (`https://www.salesforce.com/company/legal/tmcusageguidelines/`).
+- **Not verified:** whether developer.salesforce.com is covered by those Terms or has its own documentation terms. I did not find a developer-docs license.
+
+**Reading of this (an interpretation):** the signals that the docs are meant for LLM use (`robots.txt`, `llms.txt`, the Claude button) are encouraging, but none is an explicit license. The Terms say content needs permission. So:
+- A personal, local index built by each user from the public pages is the lowest-risk use, and it matches the project's "bring your own index" decision.
+- **Redistributing Salesforce content is not safe without permission.** That includes committing crawled content to the repo, publishing a prebuilt index, and the hosted service in milestone 4.
+- Training or fine-tuning a model on the content is a separate question (see `docs/rag-vs-training.md`); we are not doing it.
+
+**Practices to keep:** honor `robots.txt`; keep the descriptive user agent; keep the 2.5s per-host delay; always keep the source URL and release in each page's front matter; link back to the original page in answers; never strip attribution; keep `data/` out of git.
+
 ## TODO
 
+- [ ] **Terms review before anything is hosted or shared:** find the developer-docs terms (check the developer.salesforce.com footer and the Trademark and Copyright guidelines page), and decide whether to ask Salesforce for written permission before milestone 4 (hosted service) or before sharing any prebuilt index. Until then, treat the hosted service as blocked.
+- [ ] **Evaluate an "open in Claude" style link (milestone 3 idea).** Salesforce's docs open `claude.ai/new` with this prompt: "I'm reading "Get Started with Pub/Sub API" at https://developer.salesforce.com/docs/platform/pub-sub-api/guide/intro.html. Read this page so I can ask questions about it. For broader context, see https://developer.salesforce.com/docs/llms.txt". It passes the HTML page URL (not the `.md`) and points at `llms.txt` as the index. A SfCognitio equivalent could be "I'm reading <title> at <url>. Use the SfCognitio MCP server (`get_page`, `search_docs`) for this page and related ones", returned next to a page by `get_page`. Evaluate what helps developers most and stays within the terms: link to the original Salesforce page, return only the chunks needed, include the release and source URL, no bulk redistribution.
 - [ ] **Create a Platform subset (on hold until 2026-10-26).** Decide which of the 26 guides in `llms-platform.txt` to keep. Exclude the legacy ones: candidates are `ajax`, `caf-dev`, `salesforce-developer-environment-dotnet-tipsheet`, `salesforce-pages-developers-guide` (494 pages, Visualforce) and `mobile-offline`. These are my suggestions, not decisions.
 - [ ] Juan to analyze Service Cloud and `spiff` (both on hold until 2026-10-26).
 - [ ] **Test tomorrow (2026-10-26): the two sources not built yet.** Juan still wants all four: dev-atlas and dev-docs (built), plus pdf-guides and help. Nothing is verified about the last two, so probe them before designing.
