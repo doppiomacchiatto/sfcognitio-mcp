@@ -1,0 +1,11 @@
+{
+  "name": "sfcognitio-mcp",
+  "version": "0.0.1",
+  "description": "SfCognitio: Salesforce documentation knowledge server (MCP) that makes any agent a Salesforce expert. Placeholder release.",
+  "license": "Apache-2.0",
+  "author": "Santisi LLC",
+  "repository": { "type": "git", "url": "git+https://github.com/doppiomacchiatto/sfcognitio-mcp.git" },
+  "keywords": ["salesforce", "mcp", "rag", "agents"],
+  "main": "index.js",
+  "files": ["index.js", "README.md", "LICENSE", "NOTICE"]
+}
