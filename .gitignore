@@ -12,3 +12,9 @@ index/
 *.lance/
 *.sqlite
 *.db
+
+# Transfer artifacts
+*.tgz
+*.bundle
+*.zip
+*Zone.Identifier

@@ -1,0 +1,52 @@
+# SfCognitio crawler configuration.
+# Paths are relative to this file.
+
+data_dir: ./data
+
+crawler:
+  # developer.salesforce.com returns 403 to anonymous agents.
+  # Keep a descriptive, honest user agent with a contact URL.
+  user_agent: "sfcognitio-mcp/0.1 (+https://github.com/doppiomacchiatto/sfcognitio-mcp) python-httpx"
+  concurrency: 2
+  per_host_delay_seconds: 2.5
+  timeout_seconds: 60
+  max_retries: 4
+  # On repeated 403/429, stop the run and resume later instead of hammering.
+  max_backoff_seconds: 300
+  # Re-check pages older than this on later runs (conditional GET).
+  recheck_after_days: 14
+  # 0 = no limit. Use --limit on the CLI for trial runs.
+  max_pages: 0
+
+# Guides to crawl. Remove or extend as needed, or override with --guide.
+guides:
+  - apexcode     # Apex Developer Guide (classic atlas)
+  - api_rest     # REST API Developer Guide (classic atlas)
+  - lwc          # Lightning Web Components Developer Guide (new docs)
+  - api_meta     # Metadata API Developer Guide (classic atlas)
+  - api          # SOAP API Developer Guide (classic atlas)
+  - api_asynch   # Bulk API 2.0 and Bulk API Developer Guide (classic atlas)
+  - platform-events  # Platform Events Developer Guide (new docs)
+
+sources:
+  atlas:
+    enabled: true
+    # Classic guides. Discovery uses each guide's table of contents API,
+    # falling back to this sitemap.
+    sitemap: https://developer.salesforce.com/docs-atlas-sitemap.xml
+    base: https://developer.salesforce.com/docs
+    locale: en-us
+    # Which Salesforce release to crawl. "latest" lets each guide use its own
+    # newest version (they can differ). Pin one release so every guide matches:
+    #   release: "Winter '27"    (or API version "68.0", or doc release "264.0")
+    release: "Winter '27"
+    # If a guide isn't published for the pinned release:
+    #   false = fall back to that guide's latest, true = skip the guide.
+    strict_release: false
+  docs:
+    enabled: true
+    # Newer statically generated docs (LWC, Platform, etc.).
+    sitemap: https://developer.salesforce.com/docs/ssg-sitemap.xml
+    include: ["https://developer.salesforce.com/docs/"]
+    exclude: ["/ja-jp/", "/fr-fr/", "/de-de/", "/es-es/", "/it-it/", "/ko-kr/",
+              "/zh-cn/", "/zh-tw/", "/pt-br/", "/nl-nl/", "/es-mx/"]
