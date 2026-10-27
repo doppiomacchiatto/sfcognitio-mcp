@@ -50,6 +50,7 @@ guides:
   - slds-linter
   - slds-validator
   - lightning-component-reference  # Lightning base components
+  - hosted-mcp-servers # Hosted MCP Servers (incl. Headless 360)
 
 # Hand-picked pages to crawl in addition to the guides. They land in the
 # "articles" bucket (data/text/articles/). Newer-docs-site URLs (.md) work best.
@@ -73,6 +74,7 @@ sources:
       - connect-rest
       - graphql-api
       - event-bus
+      - hosted-mcp-servers
   atlas:
     enabled: true
     # Classic guides. Discovery uses each guide's table of contents API,
